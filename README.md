@@ -67,10 +67,17 @@ Without a key the agent falls back to deterministic answers, so the app runs ful
 .venv/bin/python agent.py "Why did conversion drop in Rome?" --role "Market Manager"
 ```
 
+## How it fits together
+
+[ARCHITECTURE.md](ARCHITECTURE.md) — two diagrams: the layered stack that decides what the
+product is *allowed* to say, and the evaluation loop that decides whether it should have
+said it.
+
 ## Layout
 
 | File | Role |
 |---|---|
+| `ARCHITECTURE.md` | The stack and the evaluation loop, as diagrams |
 | `app.py` | Conversation + Insight Dashboard |
 | `control_plane.py` | Analyst surface: queue, evaluation harness, catalog, experiments, audit |
 | `catalog.py` | Semantic layer — metrics, markets, role policy. One definition, every surface |
