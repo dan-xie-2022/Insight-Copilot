@@ -1,0 +1,20 @@
+# Secrets — never commit
+.env
+.env.local
+*.key
+
+# Environment
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Generated data and runtime state
+data/warehouse.duckdb
+data/dashboards.json
+data/conversations.json
+data/audit_log.jsonl
+data/llm_cache/
+
+# Local tooling
+.claude/
