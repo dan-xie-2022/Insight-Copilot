@@ -7,7 +7,7 @@ already given.
 
 ## The stack
 
-<img src="docs/images/architecture.svg" alt="Layered architecture: employees and analysts enter through an application layer of conversational UI, insight workflows and channel integrations; an infra and orchestration layer of MCP tools, LLM gateway and eval layer; a data platform layer of semantic layer, scoped text-to-SQL and data lake; with governance spanning the infra and data layers." width="680">
+<img src="docs/images/architecture.svg" alt="Layered architecture: employees and analysts enter through an application layer of conversational UI, insight workflows and channel integrations; an infra and orchestration layer of MCP tools, LLM gateway and eval layer; a data platform layer of semantic layer, scoped text-to-SQL and data lake; with governance spanning the infra and data layers. Requests flow downward and responses flow back upward through each layer." width="680">
 
 Employees enter through the application layer and never touch the layers below it. The
 orchestration layer plans; it does not compute. Every query resolves through the semantic
