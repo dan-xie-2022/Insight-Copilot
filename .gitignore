@@ -2,6 +2,7 @@
 .env
 .env.local
 *.key
+.streamlit/secrets.toml
 
 # Environment
 .venv/
@@ -11,6 +12,7 @@ __pycache__/
 
 # Generated data and runtime state
 data/warehouse.duckdb
+data/warehouse.duckdb.building
 data/dashboards.json
 data/conversations.json
 data/audit_log.jsonl

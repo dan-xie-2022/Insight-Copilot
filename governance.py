@@ -15,9 +15,10 @@ What is enforced:
   · audit         — every attempt is logged, allowed or refused.
 """
 
+import importlib.util
 import json
 import os
-from datetime import datetime
+from datetime import date, datetime
 
 import duckdb
 import sqlglot
@@ -27,6 +28,7 @@ import catalog as cat
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "warehouse.duckdb")
 AUDIT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "audit_log.jsonl")
+GENERATOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "generate.py")
 MAX_ROWS = 5_000
 DIALECT = "duckdb"
 
@@ -126,10 +128,55 @@ def _cap(sql: str) -> str:
     return tree.sql(dialect=DIALECT)
 
 
+# --- Freshness -----------------------------------------------------------------------
+# Every series is generated relative to `date.today()`, so a warehouse built yesterday is
+# not merely short a day: the intervention log keeps moving with the calendar while the
+# planted spend cut stays put, so the causal engine ends up splitting pre/post on a date
+# the data no longer breaks at. Rebuilding is cheap (~2s) and makes the app correct on any
+# day it happens to be opened — including a cloud deploy, which starts with no warehouse
+# at all because the file is git-ignored.
+
+_fresh = False
+
+
+def _max_date() -> date:
+    con = duckdb.connect(DB_PATH, read_only=True)
+    try:
+        return con.execute("SELECT MAX(date) FROM fact_market_daily").fetchone()[0]
+    finally:
+        con.close()
+
+
+def _rebuild() -> None:
+    spec = importlib.util.spec_from_file_location("warehouse_generator", GENERATOR)
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    # Build beside the target and swap, so a second process reading mid-build sees either
+    # the old warehouse or the new one, never a half-written file.
+    tmp = f"{DB_PATH}.building"
+    gen.build(tmp)
+    os.replace(tmp, DB_PATH)
+
+
+def ensure_warehouse() -> None:
+    """Build the warehouse if it is missing or no longer reaches today."""
+    global _fresh
+    if _fresh:
+        return
+    try:
+        stale = not os.path.exists(DB_PATH) or _max_date() < date.today()
+    except Exception:
+        stale = True  # unreadable or schema-less: rebuild rather than fail the query
+    if stale:
+        _rebuild()
+    _fresh = True
+
+
 # --- Execution -----------------------------------------------------------------------
 
 def run(sql: str, role: str, question: str = "", metric_id: str = None):
     """The only way to reach the warehouse."""
+    ensure_warehouse()
     if metric_id and not can_access(role, metric_id):
         r = Refused(
             f"{role} isn't entitled to {cat.METRICS[metric_id]['label']}.", "role_policy"

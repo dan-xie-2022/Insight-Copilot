@@ -34,6 +34,15 @@ class LLMUnavailable(Exception):
 
 def _key() -> Optional[str]:
     k = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if not k:
+        # Streamlit Cloud injects secrets through st.secrets, not the environment. Guarded
+        # because agent.py runs as a plain CLI with no Streamlit runtime.
+        try:
+            import streamlit as st
+
+            k = str(st.secrets.get("DEEPSEEK_API_KEY", "")).strip()
+        except Exception:
+            k = ""
     return k or None
 
 

@@ -67,6 +67,33 @@ Without a key the agent falls back to deterministic answers, so the app runs ful
 .venv/bin/python agent.py "Why did conversion drop in Rome?" --role "Market Manager"
 ```
 
+The warehouse rebuilds itself whenever it is missing or no longer reaches today, so
+`data/generate.py` is a convenience rather than a required step. Every series is generated
+relative to `date.today()`; a warehouse left over from yesterday would put the planted spend
+cut on a date the intervention log no longer claims, and the causal engine would split
+pre/post in the wrong place.
+
+## Deploying
+
+Streamlit Community Cloud, from this repo:
+
+1. Point [share.streamlit.io](https://share.streamlit.io) at this repo, branch `main`,
+   entry point `app.py`.
+2. Add the key under **Advanced settings → Secrets**, in TOML:
+   ```toml
+   DEEPSEEK_API_KEY = "sk-..."
+   ```
+   `llm_client` reads the environment first and falls back to `st.secrets`, so the same code
+   runs locally off `.env` and hosted off secrets. Without the key the deployed app still
+   works — it serves the deterministic answers.
+3. Nothing else to provision. The warehouse builds itself on first query, in about two
+   seconds, so no database ships with the repo.
+
+Persistence is a local file (`data/`), which on Community Cloud lives on ephemeral disk:
+pinned tiles and conversations survive a session but not a container restart. That is fine
+for a demo and wrong for anything real — the store interfaces in `dashboard_store.py` and
+`chat_store.py` are the seam where a hosted database would go.
+
 ## How it fits together
 
 [ARCHITECTURE.md](ARCHITECTURE.md) — two diagrams: the layered stack that decides what the

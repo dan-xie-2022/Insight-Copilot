@@ -1,10 +1,9 @@
 streamlit>=1.61
 plotly>=6.0
 pandas>=2.2
+numpy>=2.2
 
-# Added as the real backend lands (see plan):
-# duckdb          — in-process warehouse
-# sqlglot         — SQL parsing for the governance allow-list
-# openai          — DeepSeek client (OpenAI-compatible)
-# python-dotenv   — loads DEEPSEEK_API_KEY from .env
-# Faker           — synthetic data generation
+duckdb>=1.5          # in-process warehouse
+sqlglot>=30.0        # SQL parsing for the governance allow-list
+openai>=2.0          # DeepSeek client (OpenAI-compatible)
+python-dotenv>=1.0   # loads DEEPSEEK_API_KEY from .env for local runs
