@@ -16,6 +16,7 @@ import chat_store
 import control_plane
 import evidence_data as ed
 import dashboard_store as store
+import feedback_store as fb
 import mock_data as md
 
 st.set_page_config(
@@ -43,6 +44,10 @@ dash_open = st.session_state["dash_open"]
 _pinned = st.session_state.pop("just_pinned", None)
 if _pinned:
     st.toast(f"Pinned {_pinned}", icon="📌")
+
+# Same reason: the confirmation has to outlive the rerun that submitted the feedback.
+if st.session_state.pop("fb_sent", None):
+    st.toast("Thanks — sent to the analyst queue", icon="📋")
 
 st.markdown(
     """
@@ -88,6 +93,12 @@ st.markdown(
 
       /* Subtle per-message actions, like ChatGPT's icon row under a response. */
       .msg-actions button { color: #6b7280 !important; font-size: 0.8rem !important; }
+
+      /* Follow-up card under a thumbs-down. It must read as a quiet aside, never as a
+         form standing between the reader and the next answer. */
+      .fb-ask { font-size: 0.86rem; font-weight: 600; margin-bottom: 0.1rem; }
+      .fb-sub { color: #6b7280; font-size: 0.76rem; margin-bottom: 0.55rem; }
+      .fb-thanks { color: #0F9D58; font-size: 0.78rem; margin-top: 0.1rem; }
 
       .empty-title {
         text-align: center; font-size: 1.75rem; font-weight: 600;
@@ -513,6 +524,101 @@ def render_scorecard(sc: dict, turn: int) -> None:
     )
 
 
+def render_rating(turn: int, q: str, a: dict) -> None:
+    """👍/👎 under an answer. A thumbs-down opens the follow-up card beneath it.
+
+    The rating is written the moment it is clicked. Asking for a reason first would lose
+    the signal from everyone who cannot be bothered to give one — which is most people,
+    and their thumbs-down still counts.
+    """
+    conv_id = st.session_state["conv_id"]
+    current = (fb.get(user_key, conv_id, turn) or {}).get("rating")
+
+    widget = f"fb_thumbs_{conv_id}_{turn}"
+    if widget not in st.session_state:
+        st.session_state[widget] = {"down": 0, "up": 1}.get(current)
+
+    picked = {0: "down", 1: "up"}.get(st.feedback("thumbs", key=widget))
+    if picked == current:
+        return
+
+    if picked is None:
+        fb.clear(user_key, conv_id, turn)
+    else:
+        fb.rate(
+            user_key, conv_id, turn, picked,
+            {
+                "question": q,
+                "role": role,
+                "metric_id": a.get("metric_id"),
+                "market": a.get("market"),
+                "kind": a.get("kind"),
+            },
+        )
+    st.session_state[f"fb_open_{conv_id}_{turn}"] = picked == "down"
+    st.rerun()
+
+
+def render_feedback_detail(turn: int) -> None:
+    """The 'tell us more' step: reason chips plus free text, on a thumbs-down only."""
+    conv_id = st.session_state["conv_id"]
+    record = fb.get(user_key, conv_id, turn) or {}
+    if record.get("rating") != "down":
+        return
+
+    open_key = f"fb_open_{conv_id}_{turn}"
+    given = bool(record.get("reasons") or record.get("comment"))
+
+    if not st.session_state.get(open_key):
+        # Collapsed: a receipt if they told us why, a way back in if they dismissed it.
+        if given:
+            st.markdown(
+                '<div class="fb-thanks">✓ Thanks — this is with the analyst queue.</div>',
+                unsafe_allow_html=True,
+            )
+        elif st.button("＋ Add detail", key=f"fb_more_{conv_id}_{turn}", type="tertiary"):
+            st.session_state[open_key] = True
+            st.rerun()
+        return
+
+    with st.container(border=True):
+        st.markdown(
+            '<div class="fb-ask">Tell us what went wrong</div>'
+            '<div class="fb-sub">Optional — but it routes the fix to whoever owns it.</div>',
+            unsafe_allow_html=True,
+        )
+        reasons = st.pills(
+            "Reason",
+            list(fb.REASONS),
+            selection_mode="multi",
+            default=record.get("reasons") or None,
+            key=f"fb_why_{conv_id}_{turn}",
+            label_visibility="collapsed",
+        )
+        comment = st.text_area(
+            "More detail",
+            value=record.get("comment", ""),
+            placeholder="What did you expect to see instead?",
+            key=f"fb_txt_{conv_id}_{turn}",
+            label_visibility="collapsed",
+            height=80,
+        )
+        send, skip, _ = st.columns([1.7, 1.1, 3.6])
+        if send.button(
+            "Submit feedback", key=f"fb_send_{conv_id}_{turn}",
+            type="primary", width="stretch",
+        ):
+            fb.add_detail(user_key, conv_id, turn, reasons, comment)
+            st.session_state[open_key] = False
+            st.session_state["fb_sent"] = True
+            st.rerun()
+        if skip.button(
+            "Not now", key=f"fb_skip_{conv_id}_{turn}", type="tertiary", width="stretch"
+        ):
+            st.session_state[open_key] = False
+            st.rerun()
+
+
 def render_conversation() -> None:
     """The transcript: user bubbles right, assistant prose left, actions underneath."""
     if not turns:
@@ -575,7 +681,7 @@ def render_conversation() -> None:
                     )
 
         st.markdown('<div class="msg-actions">', unsafe_allow_html=True)
-        act1, act2, act3, _ = st.columns([2.1, 0.7, 0.7, 4])
+        act1, act2, _ = st.columns([2.1, 1.4, 4])
         can_pin = bool(a["metric_id"]) and a["metric_id"] in policy["allowed"]
         # The button has to tell the truth about state. Offering "Pin" for something
         # already pinned reads as a broken button when the duplicate is refused.
@@ -598,9 +704,11 @@ def render_conversation() -> None:
                 f"{md.METRICS[a['metric_id']]['label']} · {a['market']}"
             )
             st.rerun()
-        act2.button("👍", key=f"up_fb_{turn}", type="tertiary")
-        act3.button("👎", key=f"dn_fb_{turn}", type="tertiary")
-        st.markdown('</div><div class="turn-gap"></div>', unsafe_allow_html=True)
+        with act2:
+            render_rating(turn, q, a)
+        st.markdown("</div>", unsafe_allow_html=True)
+        render_feedback_detail(turn)
+        st.markdown('<div class="turn-gap"></div>', unsafe_allow_html=True)
 
 
 def render_tile_grid(tiles: list) -> None:

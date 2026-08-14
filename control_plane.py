@@ -16,6 +16,7 @@ import streamlit as st
 import analyst_data as ad
 import eval_data as ev
 import evidence_data as ed
+import feedback_store as fs
 import mock_data as md
 
 STATUS_STYLE = {
@@ -47,7 +48,20 @@ def render_feedback_queue() -> None:
         "is work that makes the next hundred answers better, not one ticket for one person."
     )
 
-    all_items = ad.FEEDBACK_QUEUE + st.session_state.get("cp_added", [])
+    counts = fs.summary()
+    if counts["down"]:
+        st.markdown(
+            f'<span class="pill pill-warn">{counts["down"]} rated down</span>'
+            f'<span class="pill pill-ok">{counts["up"]} rated up</span>'
+            f'<span class="pill pill-muted">{counts["detailed"]} gave a reason</span>',
+            unsafe_allow_html=True,
+        )
+
+    # Live thumbs-down lead, grouped one row per question — a bad answer served to twenty
+    # people is one fix, not twenty tickets. Seeded rows follow.
+    all_items = (
+        fs.queue_items() + ad.FEEDBACK_QUEUE + st.session_state.get("cp_added", [])
+    )
     open_items = [f for f in all_items if f["id"] not in resolved]
     if not open_items:
         st.success("Queue clear. Every reported gap has been triaged.", icon="✅")
@@ -61,8 +75,12 @@ def render_feedback_queue() -> None:
             with meta:
                 st.markdown(
                     f'<div style="text-align:right">'
-                    f'<span class="pill {SEVERITY_STYLE[item["severity"]]}">{item["outcome"]}</span>'
-                    f'<span class="pill pill-muted">{item["asks_30d"]} asks · 30d</span></div>',
+                    + ('<span class="pill pill-ok">live</span>' if item.get("live") else "")
+                    + f'<span class="pill {SEVERITY_STYLE[item["severity"]]}">{item["outcome"]}</span>'
+                    # Seeded rows count asks; a grouped thumbs-down row counts ratings.
+                    # Labelling both "asks · 30d" would misreport the live ones.
+                    f'<span class="pill pill-muted">{item["asks_30d"]} '
+                    f'{item.get("count_label", "asks · 30d")}</span></div>',
                     unsafe_allow_html=True,
                 )
 

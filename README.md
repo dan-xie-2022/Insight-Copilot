@@ -111,6 +111,7 @@ said it.
 | `governance.py` | The only path to the warehouse |
 | `causal.py` | Evidence ladder, difference-in-differences, assumption tests |
 | `agent.py` / `llm_client.py` | Tool-calling loop over DeepSeek, with deterministic fallback |
+| `feedback_store.py` | 👍/👎 on answers, grouped by question into the analyst's queue |
 | `evidence_data.py` | Intervention log + experimentation-platform mirror |
 | `eval_data.py` | Live answer-quality sampling scored by an LLM judge |
 | `data/generate.py` | Builds the DuckDB warehouse (16 markets, 4 regions) |

@@ -15,6 +15,7 @@ data/warehouse.duckdb
 data/warehouse.duckdb.building
 data/dashboards.json
 data/conversations.json
+data/feedback.json
 data/audit_log.jsonl
 data/llm_cache/
 
