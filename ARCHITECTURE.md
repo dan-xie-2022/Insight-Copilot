@@ -7,13 +7,29 @@ already given.
 
 ## The stack
 
-<img src="docs/images/architecture.svg" alt="Layered architecture: employees and analysts enter through an application layer of conversational UI, insight workflows and channel integrations; an infra and orchestration layer of MCP tools, LLM gateway and eval layer; a data platform layer of semantic layer, scoped text-to-SQL and data lake; with governance spanning the infra and data layers. Requests flow downward and responses flow back upward through each layer." width="680">
+<img src="docs/images/architecture.png" alt="Layered architecture. Employees and analysts sit at the top; requests flow down and responses flow back up. Application layer: conversational UI, insight workflows, channel integrations. Infra and agent orchestration layer: analytical agents, agent orchestration, tool and MCP ecosystem, LLM gateway and guardrails, over a full-width observability and evaluation band. Semantic and intelligence layer: the governed semantic layer holding metrics, dimensions, definitions and business logic as the single source of semantic truth. Data access and execution layer: a query engine covering text-to-SQL, API calls, search, vector queries and code execution. Data platform layer: enterprise data platform, data lake and raw data, data products and features. Governance runs cross-cutting beneath every layer, with a right-hand rail pairing each layer to a concern — security and access control, privacy and PII protection, policy enforcement, audit and compliance, quality and observability, risk management." width="700">
 
-Employees enter through the application layer and never touch the layers below it. The
-orchestration layer plans; it does not compute. Every query resolves through the semantic
-layer, which is the only path to the data lake — text-to-SQL is scoped to it rather than
-turned loose on raw tables. Governance spans the infra and data layers because access
-control and audit are not a step in the flow, they are a property of it.
+Five layers, and the boundaries are the design. Employees enter at the top and never touch
+anything below the application layer. The orchestration layer plans, routes and evaluates;
+it does not compute — which is the same division `agent.py` and `causal.py` enforce in code,
+and the entire safety argument rests on it.
+
+Below that, what used to be one "data" box is properly three, because they fail differently.
+The **semantic layer** decides what a metric *means* — one definition, every surface, so the
+dashboard and the copilot cannot disagree about conversion rate. The **execution layer**
+decides what a question is *allowed to run* — text-to-SQL is scoped to governed definitions
+rather than turned loose on raw tables. Only then does anything reach the **data platform**.
+A single "text-to-SQL over the warehouse" arrow hides both of those decisions, and they are
+where the trust is won or lost.
+
+Governance is drawn cross-cutting rather than as a layer because access control, PII
+protection, audit and risk are not a step in the flow — they are a property of it. Each
+concern on the right pairs with the layer it constrains: PII protection has to sit where
+tools execute, not where results are rendered, or it is decoration.
+
+Observability and evaluation span the full width of the orchestration layer for the same
+reason, and they are the hinge into the second diagram: every answer this stack produces is
+traced on the way out.
 
 ---
 
