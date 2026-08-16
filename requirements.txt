@@ -7,3 +7,4 @@ duckdb>=1.5          # in-process warehouse
 sqlglot>=30.0        # SQL parsing for the governance allow-list
 openai>=2.0          # DeepSeek client (OpenAI-compatible)
 python-dotenv>=1.0   # loads DEEPSEEK_API_KEY from .env for local runs
+faker>=30.0          # synthetic PII for dim_customer — needed by the self-building warehouse
