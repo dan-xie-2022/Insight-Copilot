@@ -433,6 +433,114 @@ DESIGN_STYLE = {
 }
 
 
+def did_chart(v: dict) -> go.Figure:
+    """The classic difference-in-differences picture, drawn from the verdict's own levels.
+
+    Three x positions — pre, the intervention, post — rather than two. Both treated lines
+    sit together at the pre-period level until the cut and only separate after it, which
+    is the textbook's shape *and* the estimator's actual claim: a two-way fixed-effects
+    DiD fits a level per group per period, not a trend within one.
+
+    The alternative — joining the pre mean to the post mean across a date axis — draws a
+    slope through the intervention and so asserts the movement began before the change.
+    That is exactly the claim the pre-trends test was run to rule out.
+    """
+    p = v["plot"]
+    spec = md.METRICS[v["metric_id"]]
+    x_pre, x_cut, x_post = 0.0, 1.0, 2.0
+    good = (v["effect_pct"] >= 0) == spec["higher_is_better"]
+    colour = GOOD if good else BAD
+    fill = "rgba(15,157,88,0.10)" if good else "rgba(217,48,37,0.10)"
+    fmt = lambda y: md.format_value(y, spec["unit"])
+
+    fig = go.Figure()
+
+    # The wedge between observed and counterfactual is the estimate. Shading it is what
+    # makes "the effect is a gap, not a drop" land without reading the caption.
+    fig.add_trace(go.Scatter(
+        x=[x_cut, x_post, x_post, x_cut],
+        y=[p["t_pre"], p["counterfactual"], p["t_post"], p["t_pre"]],
+        fill="toself", fillcolor=fill, mode="lines", line=dict(width=0),
+        hoverinfo="skip", showlegend=False,
+    ))
+
+    def line(y_pre, y_post, name, colour, dash=None, symbol="circle"):
+        open_marker = symbol.endswith("-open")
+        fig.add_trace(go.Scatter(
+            x=[x_pre, x_cut, x_post], y=[y_pre, y_pre, y_post],
+            mode="lines+markers", name=name,
+            line=dict(color=colour, width=2.5 if dash is None else 2, dash=dash),
+            # The middle marker is a hinge, not an observation — hide it but keep the
+            # vertex so the kink lands exactly on the intervention line.
+            marker=dict(
+                size=9, symbol=symbol, opacity=[1, 0, 1],
+                # Only the hollow counterfactual marker needs a stroke; giving the filled
+                # ones one rings them in the default dark outline.
+                line=dict(width=2, color=colour) if open_marker else dict(width=0),
+            ),
+            hovertemplate=f"{name}<br>%{{x}}: %{{customdata}}<extra></extra>",
+            customdata=[fmt(y_pre), "", fmt(y_post)],
+        ))
+
+    line(p["c_pre"], p["c_post"], f"Control markets ({p['n_controls']})", GOOD)
+    line(p["t_pre"], p["counterfactual"], f"{v['market']} · counterfactual", ACCENT,
+         dash="dot", symbol="circle-open")
+    line(p["t_pre"], p["t_post"], f"{v['market']} · observed", ACCENT)
+
+    # Effect bracket, clear of the post markers.
+    x_b = x_post + 0.22
+    lo, hi = sorted([p["t_post"], p["counterfactual"]])
+    fig.add_shape(type="line", x0=x_b, x1=x_b, y0=lo, y1=hi, line=dict(color=colour, width=2))
+    for y in (lo, hi):
+        fig.add_shape(type="line", x0=x_b - 0.06, x1=x_b + 0.06, y0=y, y1=y,
+                      line=dict(color=colour, width=2))
+
+    p_txt = "p&lt;0.001" if v["p_value"] is not None and v["p_value"] < 0.001 else (
+        f"p={v['p_value']:.3f}" if v["p_value"] is not None else "")
+    ci = v["ci_pct"]
+    fig.add_annotation(x=x_b, y=hi, yshift=15, xanchor="left", xshift=8, showarrow=False,
+                       text="<b>Intervention effect</b>", font=dict(size=10, color="#202124"))
+    fig.add_annotation(
+        x=x_b, y=(lo + hi) / 2, xanchor="left", xshift=10, align="left", showarrow=False,
+        text=f"<b>{v['effect_pct']:+.1f}%</b>"
+             + (f"<br><span style='font-size:9px'>[{ci[0]:+.1f}, {ci[1]:+.1f}]"
+                f"{' · ' + p_txt if p_txt else ''}</span>" if ci else ""),
+        font=dict(size=12, color=colour),
+    )
+
+    fig.add_shape(type="line", x0=x_cut, x1=x_cut, y0=0, y1=1, yref="paper",
+                  line=dict(color="#c8ccd0", width=1))
+    fig.add_annotation(x=x_cut, y=1.05, yref="paper", showarrow=False,
+                       text=f"<b>{p['cut_label']}</b> · {p['change']}",
+                       font=dict(size=10, color="#6b7280"))
+
+    fig.update_layout(
+        height=300, margin=dict(l=8, r=150, t=34, b=8),
+        plot_bgcolor="white", paper_bgcolor="white",
+        legend=dict(orientation="h", y=-0.14, x=0, font=dict(size=10)),
+        hovermode="closest",
+        yaxis=dict(title=dict(text=f"{spec['label']} ({spec['unit']})", font=dict(size=10)),
+                   gridcolor="#F1F3F4", zeroline=False, tickfont=dict(size=10),
+                   # Without this the axis title is drawn over its own tick labels at the
+                   # card's width.
+                   automargin=True),
+        xaxis=dict(
+            # An x zeroline would put a stray rule through the pre-intervention position,
+            # where nothing happened.
+            showgrid=False, zeroline=False, range=[-0.35, x_post + 0.62],
+            tickvals=[x_pre, x_post],
+            ticktext=[
+                "Pre-intervention<br><span style='font-size:9px;color:#9aa0a6'>"
+                f"{p['pre_days']}-day mean</span>",
+                "Post-intervention<br><span style='font-size:9px;color:#9aa0a6'>"
+                "since the change</span>",
+            ],
+            tickfont=dict(size=11),
+        ),
+    )
+    return fig
+
+
 def render_verdict(v: dict, turn: int) -> None:
     """The evidence card. One component renders all four rungs of the ladder."""
     label, css = DESIGN_STYLE[v["design"]]
@@ -447,10 +555,22 @@ def render_verdict(v: dict, turn: int) -> None:
         st.markdown(
             f'<div class="verdict-effect">{v["effect_pct"]:+.1f}%'
             f'<span class="verdict-ci">95% CI [{lo:+.1f}, {hi:+.1f}]'
-            + (f" · p={v['p_value']:.3f}" if v["p_value"] is not None else "")
+            # `p=0.000` claims a p-value of zero, which is never true and reads as a bug
+            # sitting directly beside the chart's own `p<0.001`.
+            + (
+                f" · p={v['p_value']:.3f}" if v["p_value"] is not None and v["p_value"] >= 0.001
+                else " · p&lt;0.001" if v["p_value"] is not None
+                else ""
+            )
             + "</span></div>",
             unsafe_allow_html=True,
         )
+
+    # The number, then the picture of the number. Only tier B has a counterfactual to
+    # draw — a randomized readout has no parallel-trends story, and an association has
+    # nothing to compare against at all.
+    if v.get("plot"):
+        st.plotly_chart(did_chart(v), width="stretch", key=f"did_{turn}")
 
     if v.get("intervention"):
         st.markdown(

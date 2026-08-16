@@ -66,6 +66,40 @@ def _panel(metric_id: str, markets: list, first: date, last: date):
 
 # --- Tier B: difference-in-differences ----------------------------------------------
 
+def _levels(rows: list, treated: str, cut: date):
+    """The four group × period means the estimate is built from, plus the counterfactual.
+
+    Read off the *estimator's own sample* rather than recomputed, so a chart drawn from
+    this can never illustrate a different set of days than the number it sits under —
+    the transition window is already excluded from `rows`, and stays excluded here.
+
+    Geometric means (exp of the mean log) because the model is fitted on logs. Arithmetic
+    means would put the counterfactual point somewhere the estimate does not imply.
+    """
+    buckets = {}
+    for market, day, logv in rows:
+        buckets.setdefault((market == treated, day >= cut), []).append(logv)
+
+    def gmean(is_treated, is_post):
+        vals = buckets.get((is_treated, is_post))
+        return math.exp(sum(vals) / len(vals)) if vals else None
+
+    t_pre, t_post = gmean(True, False), gmean(True, True)
+    c_pre, c_post = gmean(False, False), gmean(False, True)
+    if None in (t_pre, t_post, c_pre, c_post) or not c_pre:
+        return None
+
+    return {
+        "t_pre": t_pre,
+        "t_post": t_post,
+        "c_pre": c_pre,
+        "c_post": c_post,
+        # What the treated market would have done had it merely tracked the controls.
+        # The gap between this and t_post *is* the estimate, drawn.
+        "counterfactual": t_pre * (c_post / c_pre),
+    }
+
+
 def _did(metric_id: str, treated: str, controls: list, cut: date):
     """Two-way fixed-effects DiD on log values → a multiplicative effect."""
     first = cut - timedelta(days=PRE_DAYS)
@@ -97,6 +131,7 @@ def _did(metric_id: str, treated: str, controls: list, cut: date):
         "ci_pct": [(math.exp(b - 1.96 * s) - 1) * 100, (math.exp(b + 1.96 * s) - 1) * 100],
         "p_value": _p_two_sided(b / s) if s > 0 else 1.0,
         "n_obs": len(rows),
+        "levels": _levels(rows, treated, cut),
     }
 
 
@@ -256,6 +291,19 @@ def explain(metric_id: str, market: str, role: str) -> dict:
             ],
             "refusal": None,
             "n_obs": est["n_obs"],
+            # Everything a difference-in-differences chart needs, already display-ready.
+            # Conversations are persisted verbatim, so this has to survive a JSON round
+            # trip — hence an ISO string and a pre-formatted label rather than a `date`.
+            "plot": {
+                **est["levels"],
+                "cut": intervention["start"].isoformat(),
+                "cut_label": f"{intervention['start']:%b %d}",
+                "change": intervention["description"],
+                "pre_days": PRE_DAYS,
+                "n_controls": len(controls),
+            }
+            if est.get("levels")
+            else None,
         }
 
     # --- Tier C / D -----------------------------------------------------------------
